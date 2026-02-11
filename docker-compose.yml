@@ -1,0 +1,75 @@
+services:
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: weather_influx
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb2 # PERSISTENCE
+      - influxdb_config:/etc/influxdb2
+    env_file:
+      - .env
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUX_USER}
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUX_PASSWORD}
+      - DOCKER_INFLUXDB_INIT_ORG=${INFLUX_ORG}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUX_BUCKET}
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUX_TOKEN}
+    networks:
+      - weather_net
+
+  ingest:
+    build: ./ingest
+    container_name: weather_ingest
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - influxdb
+    networks:
+      - weather_net
+    environment:
+      - WEATHER_LAT=${WEATHER_LAT}
+      - WEATHER_LON=${WEATHER_LON}
+
+  ai_engine:
+    build: ./ai_engine
+    container_name: weather_ai
+    restart: unless-stopped
+    volumes:
+      # Map the local models folder to the container so weights survive rebuilds
+      - ./ai_engine/models:/app/models
+    env_file:
+      - .env
+    depends_on:
+      - influxdb
+    shm_size: '2gb' 
+    deploy:
+      resources:
+        limits:
+          memory: 4G 
+    networks:
+      - weather_net
+
+  dashboard:
+    build: ./dashboard
+    container_name: weather_dashboard
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    depends_on:
+      - influxdb
+    networks:
+      - weather_net
+
+volumes:
+  influxdb_data:
+  influxdb_config:
+
+networks:
+  weather_net:
+    driver: bridge
